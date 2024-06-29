@@ -1,0 +1,1351 @@
+---
+author: 
+- María Alejandra Solís Rojas
+- Carlos Daniel Martínez Sánchez
+- Juan José Álvarez Pacheco
+
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_sections: true
+    number-depth: 2
+    theme:
+      bg: '#FFFFFF'
+      fg: '#3D3B3B'
+      primary: '#41e835'
+      base_font: bslib::font_google("Fira Sans")
+      heading_font: bslib::font_google("Merriweather")
+      code_font: bslib::font_google("JetBrains Mono")
+      code-color: skyblue
+      font-base-size: 1.25 rem
+    css: null
+    
+params: 
+  nombre_archivo_g: E1_T70_DOCS1.xlsx
+  directorio_archivo: C:\Users\XPC\Documents\AgendaSim\ScriptsR\AgSim.R
+
+knit: (function(inputFile, encoding){
+        rmarkdown::render(
+          inputFile,
+          encoding = encoding,
+          
+          output_file = paste0('Output/','E2_T70_DOCS1.html'))})
+---
+
+```{r Setup Documento, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE)
+
+```
+
+```{r Nombre Archivo a Analizar}
+nombre_archivo = params$nombre_archivo_g
+```
+
+```{r Carga Librerias, include=FALSE, message=FALSE}
+if(!require("tidyverse")) install.packages("tidyverse"); library("tidyverse")
+if(!require("here")) install.packages("here"); library("here")
+if(!require("ggthemes")) install.packages("ggthemes"); library("ggthemes")
+if(!require("knitr")) install.packages("knitr"); library("knitr")
+if(!require("kableExtra")) install.packages("kableExtra"); library("kableExtra")
+if(!require("writexl")) install.packages("writexl"); library("writexl")
+if(!require("readxl")) install.packages("readxl"); library("readxl")
+if(!require("plotly")) install.packages("plotly"); library("plotly")
+if(!require("DT")) install.packages("DT"); library("DT")
+if(!require("htmltools")) install.packages("htmltools"); library("htmltools")
+if(!require("tsibble")) install.packages("tsibble"); library("tsibble")
+```
+
+
+```{r Escoger el directorio, include=FALSE, message=FALSE}
+
+options(root_dir = params$directorio_archivo)
+
+```
+
+
+```{r Descarga de Documento Excel}
+df_agenda_global = read_xlsx(here("Output", nombre_archivo), 
+                             sheet = "Agenda_Global")
+
+df_settings = read_xlsx(here("Output", nombre_archivo), 
+                        sheet = "Settings")
+
+df_descripcion_proceso = read_xlsx(here("Output", nombre_archivo), 
+                        sheet = "Proceso")
+
+df_horarios_actuales = read_xlsx(here("Output", nombre_archivo), 
+                        sheet = "Horarios_Actuales")
+
+if(df_settings[[which(df_settings$Setting == "cambio_de_horario"),2]]){
+  df_horarios_nuevos = read_xlsx(here("Output", nombre_archivo), 
+                        sheet = "Horarios_Nuevos")
+}
+
+
+if(!as.logical(df_settings[[which(df_settings$Setting == "inicio_vacio"),2]])){
+  df_IL_maxfechas = read_xlsx(here("Output", nombre_archivo), 
+                        sheet = "MaxFechas_InicioLleno")
+  
+  df_IL_agregar_pac = read_xlsx(here("Output", nombre_archivo), 
+                         sheet = "Agreg_Pac_InicioLleno")
+}
+  
+if(df_settings[[which(df_settings$Setting == "s_ausentismo_por_hora"),2]]){
+df_MA_aus_hora = read_xlsx(here("Output", nombre_archivo), 
+                         sheet = "MatAusentismos_hora")
+} else {
+  df_MA_aus_hora = tibble("No se escogio la opcion de Ausentismo por Hora")
+}
+
+df_settings[[which(df_settings$Setting == "tasa_llegadas_base"),2]] =
+((df_settings[[which(df_settings$Setting == "tasa_llegadas_base"),2]] %>% 
+    as.numeric())*(7*24*60)) %>% as.character()
+```
+
+
+```{r Ajuste título documento}
+titulo_documento = paste0("Análisis ", df_settings[[which(df_settings$Setting == "nombre_archivo_guardado"),2]],".xlsx")
+
+titulo_archivo_html = paste0("Reporte_", df_settings[[which(df_settings$Setting == "nombre_archivo_guardado"),2]],".html")
+
+```
+
+---
+title: `r titulo_documento`
+---
+
+```{r Correciones a tipos de datos}
+df_agenda_global$fecha_dia = df_agenda_global$fecha_dia #%>% 
+    #as_date(origin = "1899-12-30")
+
+df_agenda_global$fecha_hora = df_agenda_global$fecha_hora %>% hms()
+
+df_agenda_global = df_agenda_global %>% mutate(fecha_dia_s = yearweek(fecha_dia)) %>% 
+  select(fecha_dia_s, everything())
+
+df_agenda_global = df_agenda_global %>% 
+  left_join(df_descripcion_proceso %>% 
+              select(campo_cita = "tipos_citas", orden_citas),
+            by = "campo_cita")
+```
+
+
+```{r Registro Fechas importantes}
+
+fecha_inicio_simulacion = df_settings[[which(df_settings$Setting == "fecha_inicio_simulacion"),2]] %>% as_date()
+
+fecha_cambio_horario = df_settings[[which(df_settings$Setting == "fecha_cambio_horario"),2]] %>% as_date()
+
+fecha_final_simulacion = df_settings[[which(df_settings$Setting == "fecha_final_simulacion"),2]] %>% as_date()
+
+fecha_final_agenda = df_settings[[which(df_settings$Setting == "fecha_final_agenda"),2]] %>% as_date()
+```
+
+
+```{r Algunas variables y funciones importantes}
+lista_semanas_fechas = df_agenda_global %>% 
+  select(fecha_dia_s, fecha_dia) %>% 
+  group_by(fecha_dia_s) %>% 
+  summarise(fecha_dia = max(fecha_dia), .groups = "keep")
+
+lista_doctores = df_agenda_global %>% distinct(id_doc) %>% arrange(id_doc) %>% as_vector() %>% 
+  unname()
+
+#https://stackoverflow.com/questions/42532129/passing-fig-width-into-a-taglist
+
+w <- function() 
+  with(knitr::opts_current$get(c("fig.width", "dpi", "fig.retina")),
+       fig.width*dpi/fig.retina)
+h <- function() 
+  with(knitr::opts_current$get(c("fig.height", "dpi", "fig.retina")),
+       fig.height*dpi/fig.retina)
+
+
+if (df_settings[[which(df_settings$Setting == "cambio_de_horario"), 2]]) {
+  vline <- function(x = 0, color = "green") {
+    list(
+      type = "line",
+      y0 = 0,
+      y1 = 1,
+      yref = "paper",
+      x0 = x,
+      x1 = x,
+      line = list(color = color, dash = "dot")
+    )
+  }
+} else {
+  vline <- function(x = fecha_inicio_simulacion, color = "black") {
+    list()
+    
+  }
+}
+```
+
+```{r Tabla Settings}
+tabla_settings = df_settings %>% head(-3) %>% 
+  kable(caption = "Configuracion de la Simulacion") %>% 
+  kableExtra::kable_classic_2()
+```
+
+```{r Tabla Descripcion Proceso}
+#En caso de que no haya ausentismo entonces se debe cambiar la probabilidad de ausentismo
+
+if(!df_settings[[which(df_settings$Setting == "s_ausentismo_por_tipo_cita"),2]] %>% 
+   as.logical()){
+  df_descripcion_proceso$probabilidad_ausentismo = 0
+}
+
+tabla_descripcion_proceso = df_descripcion_proceso %>%
+  rename(
+    c("Tipo de Cita" = tipos_citas,
+      "Orden de Cita" = orden_citas,
+      "Tiempos de Procedimientos (min)" = tiempos_procedimientos,
+      "Probabilidad de Ausentismo (%)" = probabilidad_ausentismo,
+      "Tiempo de Espera Minimo entre citas (dias)" = tiempo_minimo_entre_citas)
+  ) %>%
+  kable(caption = "Descripcion del proceso", align = "c") %>%
+  kableExtra::kable_classic_2()
+```
+
+```{r Funcion Crear Resumen Horarios, warning=FALSE}
+# Esta tabla tiene por objetivo contar cual es la cantidad de los distintos
+# tipos de citas para los distintos doctores
+
+df_horario = df_horarios_actuales
+
+f_crear_resumen_horarios = function(df_horario){
+  tabla_horarios = df_horario %>% 
+    filter(!is.na(value)) %>% 
+    group_by(Doc, value) %>% 
+    mutate(value = factor(value, level = df_descripcion_proceso$tipos_citas)) %>% 
+    summarise(n = n(), .groups = "keep") %>% 
+    
+    left_join(
+      df_descripcion_proceso %>% 
+       mutate(t = tiempos_procedimientos/5) %>% 
+       select("value" = tipos_citas, t),
+      by = "value"
+    ) %>% 
+    mutate(n = n/t) %>% 
+    select(-t) %>% 
+    pivot_wider(names_from = value, values_from = n) %>% 
+    mutate(Total= rowSums(across(where(is.numeric))))
+
+  totales_tipo_cita = df_horario %>% 
+    filter(!is.na(value)) %>% 
+    group_by(Doc, value) %>% 
+    mutate(value = factor(value, level = df_descripcion_proceso$tipos_citas)) %>% 
+    summarise(n = n(), .groups = "keep") %>% 
+    
+    left_join(
+      df_descripcion_proceso %>% 
+       mutate(t = tiempos_procedimientos/5) %>% 
+       select("value" = tipos_citas, t),
+      by = "value"
+    ) %>% 
+    mutate(n = n/t) %>% 
+    select(-t) %>% 
+    
+    group_by(value) %>% summarise(Total = sum(n)) %>% 
+    mutate(value = factor(value, level = df_descripcion_proceso$tipos_citas)) %>% 
+    pivot_wider(names_from = value, values_from = Total) %>% 
+    cbind(tibble("Doc" = "Total"), .) %>% 
+    cbind("Total" = sum(tabla_horarios$Total))
+
+  tabla_horarios = rbind(tabla_horarios, totales_tipo_cita)
+  
+  return(tabla_horarios)
+}
+```
+
+```{r Tabla horarios actuales, warning=FALSE}
+tabla_horarios_actuales = f_crear_resumen_horarios(df_horarios_actuales) %>%
+  kable(caption = "Resumen de Horarios Actuales", align = "c") %>%
+  kableExtra::kable_classic_2()
+```
+
+```{r Tabla horarios nuevos, warning=FALSE}
+
+if(df_settings[[which(df_settings$Setting == "cambio_de_horario"),2]]){
+  
+  #La fecha en la que se da el cambio de horario
+  fecha_cambio_horario = df_settings[[which(df_settings$Setting == "fecha_cambio_horario"),
+                                      2]] %>% as.POSIXct()
+  
+  #La tabla en donde se muestra el resumen de horarios nuevos
+  tabla_horarios_nuevos = f_crear_resumen_horarios(df_horarios_nuevos) %>%
+    kable(caption = "Resumen de Horarios Nuevos", align = "c") %>%
+    kableExtra::kable_classic_2()
+}
+
+```
+
+
+```{r Tablas Inicio Lleno, warning=FALSE}
+if(!as.logical(df_settings[[which(df_settings$Setting == "inicio_vacio"),2]])) {
+  
+  df_IL_maxfechas$fecha_final = df_IL_maxfechas$fecha_final %>% as_date()
+    #as_date(origin = "1899-12-30")
+  
+  fecha_medicion_IL = fecha_inicio_simulacion
+  
+  tabla_IL_maxfechas = df_IL_maxfechas %>% 
+    mutate(campo_cita = factor(campo_cita, level = df_descripcion_proceso$tipos_citas)) %>% 
+    pivot_wider(names_from = campo_cita, values_from = fecha_final)  
+  
+  #Para mostrar la diferencia de dias
+  
+  difs_dias = ((tabla_IL_maxfechas %>% 
+                  select(-id_doc)) %>% 
+                 as.matrix() %>% 
+                 as_date()) - fecha_medicion_IL
+  
+  difs_dias = difs_dias %>% matrix(nrow = nrow(tabla_IL_maxfechas))
+  colnames(difs_dias) = df_descripcion_proceso$tipos_citas
+  tabla_IL_difs_dias = as_tibble(difs_dias)
+  
+  tabla_IL_difs_dias = tabla_IL_difs_dias %>% 
+    cbind(select(tabla_IL_maxfechas, id_doc),.) %>% 
+    kable(caption = "Diferencia de dias con respecto a la fecha de medicion", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+  
+  tabla_IL_maxfechas = tabla_IL_maxfechas %>% 
+    kable(caption = "Fechas por las cuales van las colas en el proceso actual", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+  
+  tabla_IL_agregar_pac = df_IL_agregar_pac %>% 
+    mutate(campo_cita = factor(campo_cita, level = df_descripcion_proceso$tipos_citas)) %>% 
+    pivot_wider(names_from = campo_cita, values_from = n) %>% 
+    kable(caption = "Cantidad de pacientes a agregar para generar el inicio lleno", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+}
+```
+
+```{r Tabla Ausentismo por hora}
+
+if(as.logical(
+  df_settings[[which(df_settings$Setting == "s_ausentismo_por_hora"),2]])){
+  
+  tabla_MA_aus_hora = df_MA_aus_hora %>% 
+    kable(caption = "Probabilidad de ausentismo dado el horario", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+  
+} else {
+  tabla_MA_aus_hora = df_MA_aus_hora %>% 
+    kable(caption = "Probabilidad de ausentismo dado el horario", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+}
+```
+
+# Configuración de la simulación
+A continuación se presenta la configuración utilizada para crear la réplica de la
+simulación. Para esta configuración se presentan varias opciones.
+
+- **inicio_vacio** : Se refiere a si en la simulación el sistema inicia sin pacientes en cola o si bien, las colas empiezan llenas de acuerdo al estado actual del sistema. Se utilizan las fechas presentes en la hoja "FechasMax" para que la simulación empiece con las colas del proceso llenas hasta estas fechas. También es importante aclarar que el inicio de la simulación debe darse en la misma fecha en la que se realizó esta medición.
+
+- **cambio_de_horario** : Esta configuración permite establecer que a partir de una fecha (**fecha_cambio_horario**), el sistema deje de utilizar los horarios actuales y empiece a utilizar una configuración con horarios nuevos. Esto permite simular como un cambio en la configuración actual puede llegar a afectar el sistema luego de algún tiempo dado.
+
+- **s_ausentismo_por_tipo_cita** : En caso de escogerse esta opción entonces el ausentismo es basado en los porcentajes conocidos de ausentismo por tipo de cita. Si se desea un ausentismo global entonces se puede colocar el mismo valor para todos los tipos de citas.
+
+- **tasa_llegada_base** : Representa la cantidad de personas que entran semanalmente al sistema. Es importante aclarar que no se distribuyen aleatoriamente dentro de la simulación si no que ingresan a un ritmo constante.
+
+- **fecha_inicio_simulacion** : Es la fecha en la que inicia la simulación. Esta siempre debe ser un lunes.
+
+- **fecha_cambio_horario** : Es la fecha en la que se da el cambio de horario, del horario actual al horario nuevo. En caso de no haber cambio de horario entonces este campo muestra un NA.
+
+
+- **fecha_final_simulacion** : Es la fecha en la que termina la simulación. Siempre debe configurarse como un Domingo. Esto con el objetivo de lograr que la simulación corra por un número entero de semanas.
+
+- **fecha_final_agenda** : Dada la naturaleza del sistema muchos pacientes al final de la simulación van a requerir citas en un tiempo posterior a la simulación. Para lograr registrar esto, la agenda global se extiende hasta dicha fecha. Si alguna fecha de espera se llega a extender posterior a esto entonces no queda registrada en la agenda y por ende no se muestra en las métricas del presente reporte.
+
+- **p_abandono_aus** : Se refiere a la probabilidad de que se de un abandono dado que se dió un ausentismo.
+
+- **p_reproceso_control** : Es la probabilidad de que en en la cita de control se termine realizando un reproceso, y el paciente requiera más de una cita.
+
+- **p_rechazo_cuponuevo** : Es la probabilidad de que en la cita de Cupo Nuevo se de un rechazo y por ende el paciente no continue en el proceso.
+
+## Configuración general
+
+```{r Imprimir tabla settings, results='asis'}
+tabla_settings %>% cat()
+```
+
+## Descripción del proceso
+
+La descripción del proceso muestra los tipos de citas secuenciales por los cuales
+debe de pasar el paciente. También se registra el tiempo que dura cada doctor
+en cada uno de los cupos.
+
+La probabilidad de ausentismo es por cada tipo de cita en caso de escogerse dicha
+opción. En caso contrario esta es cero. Finalmente el tiempo de espera mínimo entre citas, se utiliza para aquellos
+casos en los cuales la cita no puede asignarse en una fecha menor a este mínimo 
+porque el sistema requiere hacer algo.
+
+```{r Imprimir tabla proceso, results='asis'}
+tabla_descripcion_proceso %>% cat()
+```
+
+## Resumen de capacidad {.tabset}
+### Resumen de capacidad bajo el horario actual {-}
+
+Dados los horarios actuales proporcionados en el archivo de "Horarios_Actuales.xlsx", se realiza un conteo de la cantidad de cupos disponibles semanales para cada combinación de doctor y tipo de cita. Esto es importante porque define la capacidad del sistema en cada una de sus etapas para mover pacientes a lo largo del proceso.
+
+```{r Imprimir capacidades horarios act, results='asis'}
+tabla_horarios_actuales %>% cat()
+```
+
+```{r Imprimir capacidades horarios act 2, results='asis'}
+if (as.logical(
+  df_settings[[which(df_settings$Setting == "cambio_de_horario"),2]])){
+  cat("\n")
+  cat("\n")
+  cat("### Resumen de capacidad bajo el nuevo horario {-}")
+  cat("\n")
+  cat("\n")
+  cat("En el caso de proporcionarse un cambio de horario al sistema en cierta fecha entonces el mismo resumen de capacidad se analiza a continuación.")
+  cat("\n")
+  cat("\n")
+  
+  
+  tabla_horarios_nuevos %>% cat()
+}
+```
+
+
+```{r Imprimir capacidades horarios nuevos 3, eval= !as.logical(df_settings[[which(df_settings$Setting == "inicio_vacio"), 2]]) ,results='asis'}
+
+if(!as.logical(df_settings[[which(df_settings$Setting == "inicio_vacio"), 2]])){
+
+cat("## Configuración de Inicio Lleno {.tabset} ")
+  
+cat("\n")
+
+cat("A continuación se muestra la fecha en la cual se realizó la medición del tamaño
+de la cola.")
+  
+cat("\n")
+
+fecha_medicion_IL %>% cat()
+
+cat(
+"Las fechas máximas de cola medidas durante esta fecha se pueden traducir tanto
+a una cantidad de dias de espera, e igualmente a la cantidad de pacientes en cada
+uno de doctores para cada tipo de cita, que se deben de agregar para empezar con 
+el sistema lleno. \n\n"
+)
+
+
+cat("### Fechas del proceso actual {-}")
+
+cat("\n\n")
+
+tabla_IL_maxfechas %>% cat()
+
+
+cat("### Diferencia de días {-}")
+cat("\n")
+
+
+tabla_IL_difs_dias %>% cat()
+
+cat("### Cantidad pacientes agregados {-}")
+cat("\n")
+
+tabla_IL_agregar_pac %>% cat()
+}
+```
+
+
+```{r Tabla Ausentismos y Abandonos, eval= as.logical(df_settings[[which(df_settings$Setting == "s_ausentismo_por_hora"), 2]]), results='asis'}
+cat("## Configuración de ausentismos y abandonos")
+cat("\n")
+
+tabla_MA_aus_hora %>% cat()
+```
+
+# Resultados
+
+## Cantidad de citas semanales realizadas {.tabset}
+Se refiere a la cantidad de citas otorgadas y completadas desde el principio del
+proceso hasta la ultima cita. Esta cantidad de citas no toma en cuenta los 
+agendamientos realizados que terminaron en ausentismo o abandono.
+Se analiza el Total y para cada Doctor individual.
+
+```{r Prep Data Tasa Salida}
+dfg_tasa_salida = df_agenda_global %>% 
+  filter(fecha_dia <= fecha_final_simulacion,
+         campo_tomado,
+         !ausentismo) %>% 
+  group_by(campo_cita, fecha_dia_s, id_doc) %>% 
+  summarise(cantidad_citas = n(), .groups = "keep") %>% ungroup() %>% 
+  left_join(lista_semanas_fechas, by = c("fecha_dia_s"))
+
+
+t_citas_sin_realizarse = df_descripcion_proceso$tipos_citas[
+    !df_descripcion_proceso$tipos_citas %in% dfg_tasa_salida$campo_cita]
+
+if((!length(t_citas_sin_realizarse)==0)){
+  for(t_cita in t_citas_sin_realizarse){
+    por_agregar = dfg_tasa_salida %>% head(1) 
+    por_agregar["campo_cita"] = t_cita
+    por_agregar["cantidad_citas"] = 0
+    dfg_tasa_salida = rbind(dfg_tasa_salida, por_agregar)
+  }
+}
+
+dfg_tasa_salida_total=  dfg_tasa_salida %>% 
+  group_by(fecha_dia_s, campo_cita) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>%
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup() %>% 
+  as_tsibble(key = c(campo_cita), index = fecha_dia_s) %>% 
+  fill_gaps(cantidad_citas = 0, .full = TRUE) %>% as_tibble() %>% 
+  left_join(lista_semanas_fechas, by = "fecha_dia_s") %>%
+  select("Tipo de cita" = campo_cita, 
+         "Fecha" = fecha_dia, 
+         "Cantidad de citas" =  cantidad_citas)
+
+```
+
+
+```{r Prep DataTable Tasa Salida acumulada Docs}
+dfg_tasa_salida_acum_docs = dfg_tasa_salida %>% 
+  group_by(fecha_dia, campo_cita, id_doc) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>% 
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup() %>% 
+  group_by(campo_cita) %>% 
+  mutate(cantidad_citas_acum = cumsum(cantidad_citas)) %>% ungroup() 
+
+fig_DT_tasa_salida_acum_docs = dfg_tasa_salida_acum_docs %>% 
+  mutate(campo_cita = factor(campo_cita, 
+                             levels = df_descripcion_proceso$tipos_citas,
+                             ordered = TRUE),
+         fecha_dia = as_date(fecha_dia)) %>% 
+  arrange(fecha_dia, campo_cita, id_doc) %>% 
+  select(-cantidad_citas) %>% 
+  pivot_wider(names_from = campo_cita, values_from = cantidad_citas_acum) %>% 
+  rowwise() %>% 
+  mutate(Total = sum(across(df_descripcion_proceso$tipos_citas), na.rm = T)) %>% 
+  ungroup()
+```
+
+
+```{r Prep DataTable Tasa Salida acumulada Total}
+dfg_tasa_salida_acum_total = dfg_tasa_salida %>% 
+  group_by(fecha_dia, campo_cita) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>% 
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup() %>% 
+  group_by(campo_cita) %>% 
+  mutate(cantidad_citas_acum = cumsum(cantidad_citas)) %>% ungroup() 
+
+
+fig_DT_tasa_salida_acum_total = dfg_tasa_salida_acum_total %>% 
+  mutate(campo_cita = factor(campo_cita, 
+                             levels = df_descripcion_proceso$tipos_citas,
+                             ordered = TRUE),
+         fecha_dia = as_date(fecha_dia)) %>% 
+  arrange(fecha_dia, campo_cita) %>% 
+  select(-cantidad_citas) %>% 
+  pivot_wider(names_from = campo_cita, values_from = cantidad_citas_acum) %>% 
+  rowwise() %>% 
+  mutate(Total = sum(across(df_descripcion_proceso$tipos_citas), na.rm = T),
+         id_doc = "Total") %>%
+  select(fecha_dia, id_doc, everything()) %>% 
+  ungroup()
+
+
+fig_DT_acum = rbind(fig_DT_tasa_salida_acum_docs,fig_DT_tasa_salida_acum_total) %>% 
+  mutate(id_doc = factor(id_doc))
+```
+
+
+```{r Prep Data.Table Tasa Salida acumulada Total}
+fig_DT_acum %>% 
+  DT::datatable(
+    caption ='Cantidad de citas acumuladas realizadas exitosamente a lo largo de la simulación',
+              filter = 'top', options = list(
+              pageLength = length(lista_doctores) + 1, autoWidth = TRUE))
+
+```
+
+
+
+```{r Generacion graficos tasa salida Total}
+plots = list()
+
+fig = dfg_tasa_salida_total %>% 
+  plot_ly(type = "scatter", mode = "lines",
+          x = ~ Fecha,
+          y = ~`Cantidad de citas`,
+          color = ~`Tipo de cita`) %>% 
+  layout(title = "Cantidad de citas semanales realizadas (Total)",
+         shapes = list(vline(fecha_cambio_horario)))
+
+
+plots[["Total"]] = fig
+```
+
+
+```{r Generacion graficos tasa salida}
+for (doc in lista_doctores){
+  # Preparacion datos
+  dfg_tasa_salida_plotly = dfg_tasa_salida %>% 
+  filter(id_doc == doc) %>% 
+  group_by(fecha_dia_s, campo_cita) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>%
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup() %>%  
+  as_tsibble(key = c(campo_cita), index = fecha_dia_s) %>% 
+  fill_gaps(cantidad_citas = 0, .full = TRUE) %>% as_tibble() %>% 
+  left_join(lista_semanas_fechas, by = "fecha_dia_s") %>% 
+  select("Tipo de cita" = campo_cita, 
+         "Fecha" = fecha_dia, 
+         "Cantidad de citas" =  cantidad_citas)  
+  
+  #Generacion grafico
+  fig = dfg_tasa_salida_plotly %>% 
+  plot_ly(type = "scatter", mode = "lines",
+          x = ~ Fecha,
+          y = ~`Cantidad de citas`,
+          color = ~`Tipo de cita`) %>% 
+  layout(title = paste0("Cantidad de citas semanales realizadas (",doc,")"),
+         shapes = list(vline(fecha_cambio_horario)))
+  
+  plots[[doc]] = fig
+}
+
+```
+
+```{r Taglist htmltools 1, include=FALSE}
+htmltools::tagList(plots)
+```
+
+```{r Impresion Graficos Tasa Salida, results='asis', fig.width=3, fig.height= 2}
+for (doc in 1:(length(lista_doctores)+1)) {
+  
+  if(doc == 1) {
+    cat("### Total {-}")
+  } else {
+    cat("### Doctor: ",doc-1, " {-}")
+  }
+  
+  cat("\n\n")
+
+  print(htmltools::tagList(plots[[doc]]))
+
+  cat("\n\n")
+}
+```
+
+## Cupos disponibles no utilizados {.tabset}
+Los Cupos Disponibles no utilizados son una metrica de utilización de los doctores,
+asi como de la ineficiencia presente en el proceso. En este caso también se va a 
+presentar dicha cantidad de manera semanal a lo largo de la simulación.
+
+```{r Generación CDNU}
+dfg_cupos_no_utilizados = df_agenda_global %>% 
+  mutate(campo_cita = factor(campo_cita, levels = df_descripcion_proceso$tipos_citas)) %>% 
+  filter(fecha_dia <= fecha_final_simulacion,
+         !campo_tomado) %>% 
+  group_by(campo_cita, fecha_dia_s, id_doc) %>% 
+  summarise(cantidad_citas = n(), .groups = "keep") %>% ungroup() %>% 
+  left_join(lista_semanas_fechas, by = c("fecha_dia_s"))
+
+#Se agrega a esta lista aquellos tipos de citas que no se generaron para así poner en 0 esa
+#cantidad
+
+
+plantilla = dfg_cupos_no_utilizados %>% head(1) %>% rbind(dfg_cupos_no_utilizados %>% tail(1))
+
+for (id_d in lista_doctores) {
+  
+  dfg_cnu_doc = dfg_cupos_no_utilizados %>% filter(id_doc == id_d)
+  
+  citas_cnu_0 = df_descripcion_proceso$tipos_citas[
+    !df_descripcion_proceso$tipos_citas %in% dfg_cnu_doc$campo_cita]
+  
+  if (length(citas_cnu_0) != 0){
+    for (cita_cnu_0 in citas_cnu_0) {
+      plantilla$campo_cita = rep(cita_cnu_0,2)
+      plantilla$id_doc = rep(id_d,2)
+      plantilla$cantidad_citas = rep(0,2)
+      
+      dfg_cupos_no_utilizados = dfg_cupos_no_utilizados %>% rbind(plantilla)
+    }
+  }
+}
+
+
+
+```
+
+
+```{r Generación CDNU 2}
+dfg_cupos_no_utilizados_total = dfg_cupos_no_utilizados %>% 
+  group_by(fecha_dia_s, campo_cita) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>% 
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup() %>% 
+  as_tsibble(key = c(campo_cita), index = fecha_dia_s) %>% 
+  fill_gaps(cantidad_citas = 0, .full = TRUE) %>% as_tibble() %>% 
+  left_join(lista_semanas_fechas, by = "fecha_dia_s") %>% 
+  select(fecha_dia_s, 
+         "Tipo de cita" = campo_cita, 
+         "Fecha" = fecha_dia, 
+         "Cantidad de citas" =  cantidad_citas)
+  
+
+
+
+
+plots = list()
+
+fig = dfg_cupos_no_utilizados_total %>% 
+  plot_ly(type = "scatter", mode = "lines",
+          x = ~ Fecha,
+          y = ~`Cantidad de citas`,
+          color = ~`Tipo de cita`) %>% 
+  layout(title = "Cantidad de cupos disponibles no utilizados (Total)",
+         shapes = list(vline(fecha_cambio_horario)))
+
+plots[["Total"]] = fig
+
+for (doc in lista_doctores){
+  # Preparacion datos
+  dfg_cupos_no_utilizados_plotly = dfg_cupos_no_utilizados %>% 
+  filter(id_doc == doc) %>% 
+  group_by(fecha_dia_s, campo_cita) %>% 
+  mutate(cantidad_citas = if_else(is.na(cantidad_citas),0,cantidad_citas)) %>% 
+  summarise(cantidad_citas = sum(cantidad_citas, na.rm = TRUE), .groups = "keep") %>% 
+  ungroup()  %>% 
+  as_tsibble(key = c(campo_cita), index = fecha_dia_s) %>% 
+  fill_gaps(cantidad_citas = 0,.full = TRUE) %>% as_tibble() %>% 
+  left_join(lista_semanas_fechas, by = "fecha_dia_s") %>%  
+  select(fecha_dia_s, 
+         "Tipo de cita" = campo_cita, 
+         "Fecha" = fecha_dia, 
+         "Cantidad de citas" =  cantidad_citas)
+  
+  fig = dfg_cupos_no_utilizados_plotly %>% 
+  plot_ly(type = "scatter", mode = "lines",
+          x = ~ Fecha,
+          y = ~`Cantidad de citas`,
+          color = ~`Tipo de cita`) %>% 
+  layout(title = 
+         paste0("Cantidad de cupos disponibles no utilizados (",doc,")"),
+         shapes = list(vline(fecha_cambio_horario)))
+  
+  plots[[doc]] = fig
+}
+
+```
+
+```{r Taglist htmltools 2, include=FALSE}
+htmltools::tagList(plots)
+```
+
+```{r Impresión Gráficos CDNU, results='asis', fig.width=3, fig.height= 2}
+for (doc in 1:(length(lista_doctores)+1)) {
+  
+  if(doc == 1) {
+    cat("### Total {-}")
+  } else {
+    cat("### Doctor: ",doc-1, " {-}")
+  }
+  
+  cat("\n\n")
+
+  print(htmltools::tagList(plots[[doc]]))
+
+  cat("\n\n")
+}
+```
+
+
+```{r Condición Ausentismo}
+cond1 = as.logical(df_settings[[which(df_settings$Setting == "s_ausentismo_por_hora"), 2]])
+cond2 = as.logical(df_settings[[which(df_settings$Setting == "s_ausentismo_por_tipo_cita"), 2]])
+s_ausentismo = cond1 || cond2
+```
+
+```{r Ausentismos observados, eval= s_ausentismo, results='asis'}
+cat("\n\n")
+cat("## Ausentismos y Abandonos {.tabset} ")
+cat("\n\n")
+cat("El porcentaje de ausentismo y de abandonos presentes en la simulación se muestra a continuación. Se debe recalcar que los abandonos también son contados como ausentismos.")
+
+df_aus_aband_porc = df_agenda_global %>% 
+  #group_by(id_doc, campo_cita) %>% 
+  filter(fecha_dia <= fecha_final_simulacion) %>%
+  summarise(`Ausentismos [%]` = (mean(ausentismo, na.rm = TRUE) * 100) %>% round(digits = 3),
+            `Abandonos [%]` =  (mean(abandono, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "keep")
+
+tabla_aus_aband_porc = df_aus_aband_porc %>% 
+    kable(caption = "Porcentaje de ausentismo y abandonos observados", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+
+tabla_aus_aband_porc
+```
+
+
+```{r Imprimir ausentismos observados, eval= s_ausentismo, results='asis'}
+cat("\n\n")
+cat("Estos porcentajes observados se pueden dividir por doctor y tipo de cita. Como se muestra a continuación")
+cat("\n\n")
+
+marginal1 = df_agenda_global %>% 
+  mutate(campo_cita = factor(campo_cita, levels = df_descripcion_proceso$tipos_citas)) %>% 
+  group_by(id_doc) %>% 
+  filter(fecha_dia <= fecha_final_simulacion) %>%
+  summarise(`Ausentismos [%]` = (mean(ausentismo, na.rm = TRUE) * 100) %>% round(digits = 3),
+            `Abandonos [%]` =  (mean(abandono, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "drop")
+
+marginal2 = df_agenda_global %>% 
+  mutate(campo_cita = factor(campo_cita, levels = df_descripcion_proceso$tipos_citas)) %>% 
+  group_by(campo_cita) %>% 
+  filter(fecha_dia <= fecha_final_simulacion) %>%
+  summarise(`Ausentismos [%]` = (mean(ausentismo, na.rm = TRUE) * 100) %>% round(digits = 3),
+            `Abandonos [%]` =  (mean(abandono, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "drop")
+
+
+df_aus_aband_porc_gp = df_agenda_global %>% 
+  mutate(campo_cita = factor(campo_cita, levels = df_descripcion_proceso$tipos_citas)) %>% 
+  group_by(id_doc, campo_cita) %>% 
+  filter(fecha_dia <= fecha_final_simulacion) %>%
+  summarise(`Ausentismos [%]` = (mean(ausentismo, na.rm = TRUE) * 100) %>% round(digits = 3),
+            `Abandonos [%]` =  (mean(abandono, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "drop")
+
+
+tabla_list = list()
+
+for (tipo in c("Ausentismos [%]", "Abandonos [%]")) {
+  x = df_aus_aband_porc_gp[c("id_doc", "campo_cita", tipo)] %>% 
+  pivot_wider(names_from = campo_cita, values_from = all_of(tipo))
+  x = x %>% cbind(marginal1 %>% select("Total" = all_of(tipo)))
+  m1 = c("Total" , marginal2[[tipo]],df_aus_aband_porc[[tipo]])
+  names(m1) = names(x)
+  x = x %>% as.matrix() %>% rbind(m1) %>% as_tibble()
+  
+  x = x %>% kable(caption = paste("Porcentaje de", tipo %>% str_sub(end = -5), "observados"), 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+  
+  
+  tabla_list[[tipo]] = x
+}
+```
+
+
+```{r Imprimir Ausentismos y Abandonos observados, eval= s_ausentismo, results='asis'}
+for (tipo in c("Ausentismos [%]", "Abandonos [%]")) {
+  
+  cat(paste("###", tipo, "{-}"))
+
+  cat("\n\n")
+
+  tabla_list[[tipo]] %>% cat()
+
+  cat("\n\n")
+}
+```
+
+```{r Condicion Rechazo}
+
+p_rechazo_cuponuevo = df_settings[[which(df_settings$Setting == "p_rechazo_cuponuevo"), 2]] %>% as.numeric()
+s_rechazo = !p_rechazo_cuponuevo == 0
+
+```
+
+```{r Tablas de rechazo observado, eval= s_rechazo, results='asis'}
+cat("\n\n")
+cat("## Porcentaje de Rechazo en Cupo Nuevo {.tabset} ")
+cat("\n\n")
+cat("El porcentaje de pacientes que se rechazan luego de recibir la cita de Cupo Nuevo a lo interno de la simulación es el siguiente:")
+
+df_rech_porc = df_agenda_global %>% 
+  #group_by(id_doc, campo_cita) %>% 
+  filter(fecha_dia <= fecha_final_simulacion, campo_cita == "Cupo Nuevo",
+         !ausentismo) %>%
+  summarise(`Rechazo Cupo Nuevo [%]` = (mean(rechazo, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "keep")
+
+tabla_rech_porc = df_rech_porc %>% 
+    kable(caption = "Porcentaje de rechazos en Cupo Nuevo observados", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+
+tabla_rech_porc
+```
+
+
+```{r Condicion Reproceso}
+
+p_reproceso_control = df_settings[[which(df_settings$Setting == "p_reproceso_control"), 2]] %>% as.numeric()
+s_reproceso = !p_reproceso_control == 0
+
+```
+
+```{r Tablas de Reproceso observado, eval= s_reproceso, results='asis'}
+cat("\n\n")
+cat("## Porcentaje de Reproceso en Control {.tabset} ")
+cat("\n\n")
+cat("El porcentaje de pacientes que se requieren de reproceso en la cita de control es de:")
+
+df_repro_porc = df_agenda_global %>% 
+  #group_by(id_doc, campo_cita) %>% 
+  filter(fecha_dia <= fecha_final_simulacion, campo_cita == "Control") %>%
+  summarise(`Reproceso Control [%]` = (mean(reproceso, na.rm = TRUE) * 100) %>% round(digits = 3),
+            .groups = "keep")
+
+tabla_repro_porc = df_repro_porc %>% 
+    kable(caption = "Porcentaje de reprocesos en Control observados", 
+          align = "c") %>%
+    kableExtra::kable_classic_2()
+
+tabla_repro_porc
+```
+
+
+
+## Análisis de colas
+
+En este análisis se procede a verificar la distancia entre el momento en que se
+solicita una cita y el momento en que se recibe. El objetivo es observar como
+dicha distancia crece o decrece a lo largo de la simulación. Este tiempo de 
+espera puede medirse de tres maneras:
+
+1. Se puede medir como una comparacion entre la fecha de solicitud de la cita y
+la fecha en la que se recibe
+
+2. Se puede medir como la cantidad de días que el paciente debe de esperar para
+recibir su cita
+
+3. Se puede medir como la cantidad de pacientes que se encuentran esperando 
+actualmente en cola (basado en la cantidad de cupos disponibles dados en la agenda global)
+
+
+
+
+
+```{r Cálculo de Docs_siguientes, warning=FALSE, message=FALSE}
+docs_siguientes = df_agenda_global %>% 
+    filter(campo_tomado) %>% 
+    group_by(tiempo_sim, campo_cita, ausentismo, abandono, reproceso, id_paciente, id_doc) %>% 
+    summarise(n = n(), .groups = "drop") %>% 
+    arrange(id_paciente, tiempo_sim) %>% 
+    group_by(id_paciente) %>% 
+    mutate(id_doc_sig = lead(id_doc, n=1, order_by = tiempo_sim)) %>% ungroup() %>% 
+  mutate(id_doc_sig = ifelse(is.na(id_doc_sig), id_doc, id_doc_sig))
+
+df_agenda_global = df_agenda_global %>% left_join(docs_siguientes)
+```
+
+
+```{r Función para medir fechas de espera, warning=FALSE, message=FALSE}
+
+f_revisar_cola_en_fecha = function(fecha_revisar = "2023-11-15",
+                                   doc = "doc2",
+                                   orden_cita = 2,
+                                   agenda = df_agenda_global,
+                                   df_descrip = df_descripcion_proceso
+                                   ){
+  
+  #Pegamos los id_doc de la cita anterior para cada id_paciente
+  
+  #Para saber el día de cola en el que se encuentra un paciente que acaba de entrar al sistema
+  #es necesario jugar con el tiempo de inicio y el tiempo de la fecha buscamos al primer paciente
+  #con tiempo de inicio menor al tiempo de la fecha de corte
+  
+  # Paciente en Cupo Nuevo Son una excepción
+  #Hay dos posibilidades:
+  
+  fecha_revisar = as_date(fecha_revisar)
+  
+  if (orden_cita == 1) {
+    
+    #Busco el momento minimo de esta fecha a revisar en tiempo_sim
+    tiempo_sim_menor = agenda %>% 
+          filter(fecha_dia > fecha_revisar, 
+                 id_doc == doc, 
+                 orden_citas == orden_cita,
+                 campo_tomado) %>% 
+          .$tiempo_sim %>% 
+          min()
+    
+    #Para la misma consulta busco a la persona más cercana con un tiempo de nacimiento
+    #posterior a ese tiempo_sim y luego busco el dia en que recibe la cita.
+    
+    posible_fecha = agenda %>% 
+      filter(fecha_dia > fecha_revisar,
+             id_doc == doc,
+             orden_citas == orden_cita,
+             tiempo_inicio >= tiempo_sim_menor) %>% 
+      .$fecha_dia %>% min()
+    
+    #Finalmente esta posible_fecha debe compararse con el cupo disponible no 
+    #utilizado más cercano después de la fecha de revisión PERO posterior al
+    #tiempo de distancia. El que sea menor es donde iba la cola en ese momento
+    
+    tiempo_entre_citas = df_descrip[which(df_descrip$orden_citas == orden_cita),
+                                    "tiempo_minimo_entre_citas"] %>% as.numeric()
+    
+    
+    posible_fecha_2 = agenda %>% 
+      filter(fecha_dia >= fecha_revisar + tiempo_entre_citas,
+             id_doc == doc,
+             orden_citas == orden_cita,
+             !campo_tomado) %>% .$fecha_dia %>% min()
+    
+    # De las dos posibles fechas vamos a agarrar la que es menor
+    fecha_cola = min(posible_fecha, posible_fecha_2)
+    return(fecha_cola)
+  
+  } else {
+    # Si hablamos de alguien distinto a la primera cita entonces se complica averiguar
+    # el asunto. 
+    # Necesitamos consultar quién, posterior a la fecha a consultar recibió el tipo de
+    # cita anterior
+    tiempo_sim_menor = agenda %>% 
+          filter(fecha_dia >= fecha_revisar, 
+                 id_doc_sig == doc, 
+                 orden_citas == orden_cita - 1,
+                 campo_tomado, 
+                 !ausentismo,
+                 !reproceso,
+                 !rechazo) %>% 
+          .$tiempo_sim %>% 
+          min()
+    
+    #Necesito buscar basado en el doctor de la primera cita y no del doctor de
+    #esta cita porque como ahora son distintos...
+    
+    id_pac_seguir = agenda %>% 
+          filter(fecha_dia > fecha_revisar,
+                 id_doc_sig == doc,
+                 orden_citas == orden_cita - 1,
+                 campo_tomado,
+                 !ausentismo,
+                 !reproceso,
+                 !rechazo) %>% head(1) %>% .$id_paciente
+    
+    if(identical(id_pac_seguir, numeric(0))){
+      id_pac_seguir = -1
+    }
+    
+    # Una vez identificado ese paciente posterior entonces se le da seguimiento
+    # para ver en qué momento recibió la cita correspondiente.
+    
+    posible_fecha = agenda %>% 
+      filter(id_paciente == id_pac_seguir, orden_citas == orden_cita) %>% 
+      .$fecha_dia
+    
+    # Nuevamente necesitamos verificar si hay algún campo disponible para ese tipo
+    # de cita antes de este periodo. Porque en ese caso ESE sería nuestra fecha final
+    
+    tiempo_entre_citas = df_descrip[which(df_descrip$orden_citas == orden_cita),
+                                    "tiempo_minimo_entre_citas"] %>% as.numeric()
+    
+    # El tiempo_entre_citas se puede considerar o no pero no lo vamos a hacer
+    # porque a la hora de hacer la consulta con el doctor se nos da sin 
+    # tiempo entre citas
+    
+    posible_fecha_2 = agenda %>% 
+      filter(fecha_dia >= fecha_revisar, # + tiempo_entre_citas,
+             id_doc == doc,
+             orden_citas == orden_cita,
+             !campo_tomado) %>% .$fecha_dia %>% min()
+    
+    # Finalmente se comparan estas dos fechas y se escoje la menor
+    # De las dos posibles fechas vamos a agarrar la que es menor
+    fecha_cola = min(posible_fecha, posible_fecha_2)
+    
+    return(fecha_cola)
+
+  }
+}
+```
+
+```{r Fechas de medición y fechas de citas, warning=FALSE}
+
+# Queremos para todas las fechas, todos los doctores y todos los tipos de citas,
+# La fecha de espera
+
+fechas = seq.Date(from = fecha_inicio_simulacion, to = fecha_final_simulacion-3, by="day")
+lista_doctores = df_agenda_global %>% distinct(id_doc) %>% arrange(id_doc) %>% 
+  as_vector() %>% unname()
+ordenes_citas = df_descripcion_proceso$orden_citas %>% max()
+
+v_id_doc = c()
+v_orden_cita = c()
+v_fecha_revisar = c()
+v_fecha_cola = c()
+
+
+for (fecha in fechas) {
+  for (doc in lista_doctores) {
+    for (orden_cita in 1:ordenes_citas) {
+      
+      v_id_doc = c(v_id_doc, doc)
+      v_orden_cita = c(v_orden_cita, orden_cita)
+      v_fecha_revisar = c(v_fecha_revisar, fecha)
+      x = f_revisar_cola_en_fecha(fecha_revisar = fecha, 
+                                  doc = doc, 
+                                  orden_cita = orden_cita)
+      
+      # if(orden_cita ==2){
+      #   print(paste0("fecha: ",fecha %>% as_date()))
+      #   print(paste0("doc: ",doc))
+      #   print(x %>% as_date())
+      # }
+      
+      v_fecha_cola = c(v_fecha_cola, x %>% as_date())
+
+    }
+  }
+}
+
+df_fechas_colas = tibble("id_doc" = v_id_doc,
+                         "orden_citas" = v_orden_cita,
+                         "fecha_revisar" = as_date(v_fecha_revisar),
+                         "fecha_cola" = as_date(v_fecha_cola))
+
+df_fechas_colas = df_fechas_colas %>% mutate(dif_dias = fecha_cola - fecha_revisar)
+```
+
+```{r Determinar cantidad de personas en cola, warning=FALSE}
+# Se revisa en la agenda global para cada línea de df_fechas_colas cuanto cupos
+# hay (revisamos que efectivamente todos estén tomados porque si no hay un error)
+# En la lógica de la anterior función.
+
+df_cant_cupos_tomados_fechas_colas = df_agenda_global %>% 
+  left_join(df_fechas_colas, by = c("id_doc", "orden_citas")) %>%
+  group_by(orden_citas, id_doc, fecha_revisar, fecha_cola, dif_dias) %>% 
+  filter(fecha_dia >= fecha_revisar, fecha_dia <= fecha_cola) %>% 
+  summarise(cant_cupos = n(), cupos_tomados = sum(campo_tomado), .groups = "keep")
+  
+df_colas = df_fechas_colas %>% left_join(df_cant_cupos_tomados_fechas_colas, by= c("orden_citas", "id_doc", "fecha_revisar", "fecha_cola", "dif_dias")) %>% 
+  left_join(df_descripcion_proceso %>% select(tipos_citas, orden_citas),
+            by = c("orden_citas")) %>% 
+  select(id_doc, orden_citas, tipos_citas, everything()) %>%
+  mutate(dif_dias = as.numeric(dif_dias))
+
+```
+
+### Fechas de espera {.tabset}
+A continuación se muestran las fechas a las que tendría que esperar un paciente
+dada cierta fecha actual dentro de la simulación.
+
+```{r Generacion Graficos Fechas}
+plots = list()
+for (doc in lista_doctores){
+    dfg_colas = df_colas %>% 
+    filter(id_doc == doc) %>% 
+    select("Fecha de solicitud" = fecha_revisar,
+           "Fecha de la cita" = fecha_cola,
+           "Tipo de cita" = tipos_citas,
+           everything())
+
+  fig = dfg_colas %>% 
+    plot_ly(type = 'scatter', mode = 'lines',
+            x = ~`Fecha de solicitud`,
+            y = ~`Fecha de la cita`, color = ~`Tipo de cita`) %>% 
+    layout(title = paste0("Fechas de solicitud vs fechas de citas (",doc,")"),
+         shapes = list(vline(fecha_cambio_horario)))
+
+  plots[[doc]] = fig
+}
+
+
+```
+
+```{r htmltaglist3, include=FALSE}
+htmltools::tagList(plots)
+```
+
+```{r Impresion Graficos Fechas, results='asis', fig.width=3, fig.height= 2}
+for (doc in 1:(length(lista_doctores))) {
+  
+  cat("#### Doctor: ",doc, " {-}")
+  
+  cat("\n\n")
+
+  print(htmltools::tagList(plots[[doc]]))
+
+  cat("\n\n")
+}
+```
+
+
+
+### Cantidad de días de espera {.tabset}
+Las anteriores diferencias de fechas puede traducirse a la cantidad de días que
+va a tener que esperar un paciente si este pide una cita en cada momento de la
+simulación.
+```{r Creacion graficos cantidad de dias de espera}
+plots = list()
+
+for (doc in lista_doctores){
+  
+  dfg_colas = df_colas %>% 
+  filter(id_doc == doc) %>% 
+  select("Tipo de cita" = tipos_citas, 
+         "Fecha de solicitud" = fecha_revisar, 
+         "Días de espera" = dif_dias) 
+  
+  
+  fig = dfg_colas %>% 
+    plot_ly(type = 'scatter', mode = 'lines',
+            x = ~`Fecha de solicitud`,
+            y = ~`Días de espera`, color = ~`Tipo de cita`) %>% 
+    layout(title = paste0("Cantidad de dias de espera (",doc,")"),
+         shapes = list(vline(fecha_cambio_horario)))
+
+  plots[[doc]] = fig
+}
+```
+
+```{r Taglist htmltools 4, include=FALSE}
+htmltools::tagList(plots)
+```
+
+```{r Impresion Graficos Días de Espera, results='asis', fig.width=3, fig.height= 2}
+for (doc in 1:(length(lista_doctores))) {
+  
+  cat("#### Doctor: ",doc, " {-}")
+  
+  cat("\n\n")
+
+  print(htmltools::tagList(plots[[doc]]))
+
+  cat("\n\n")
+}
+```
+
+
+### Cantidad de pacientes en cola {.tabset}
+Esta última versión del análisis implica observar la cantidad de cupos existentes
+entre la fecha de solicitud y la fecha de la cita. Todos esos campos tomados son
+personas que se encuentran en espera de su cita por lo que con dicha cuenta es
+posible determinar la longitud de la cola.
+
+
+```{r Creacion df Total Pacientes en Cola}
+dfg_colas = df_colas %>% 
+  group_by(tipos_citas, fecha_revisar) %>% 
+  summarise(cant_cupos = sum(cant_cupos), .groups = "drop") %>% 
+  select("Tipo de cita" = tipos_citas, 
+         "Fecha de solicitud" = fecha_revisar, 
+         "Cantidad de pacientes en cola" = cant_cupos)
+
+plots = list()
+
+fig = dfg_colas %>% 
+    plot_ly(type = 'scatter', mode = 'lines',
+            x = ~`Fecha de solicitud`,
+            y = ~`Cantidad de pacientes en cola`, 
+            color = ~`Tipo de cita`) %>% 
+    layout(title = paste0("Cantidad de pacientes en cola (Total)"),
+         shapes = list(vline(fecha_cambio_horario)))
+
+plots[["Total"]] = fig
+```
+
+```{r Creacion de graficos Pacientes en cola}
+for (doc in lista_doctores){
+  
+  dfg_colas = df_colas %>% 
+  filter(id_doc == doc) %>%
+  select("Tipo de cita" = tipos_citas, 
+         "Fecha de solicitud" = fecha_revisar, 
+         "Cantidad de pacientes en cola" = cant_cupos)
+  
+  
+  fig = dfg_colas %>% 
+    plot_ly(type = 'scatter', mode = 'lines',
+            x = ~`Fecha de solicitud`,
+            y = ~`Cantidad de pacientes en cola`, 
+            color = ~`Tipo de cita`) %>% 
+    layout(title = paste0("Cantidad de pacientes en cola (",doc,")"),
+         shapes = list(vline(fecha_cambio_horario)))
+  
+  plots[[doc]] = fig
+}
+```
+
+```{r Taglist htmltools 5, include=FALSE}
+htmltools::tagList(plots)
+```
+
+```{r Impresión gráficos de pacientes en cola, results='asis', fig.width=3, fig.height= 2}
+for (doc in names(plots)) {
+  
+  cat("#### ",doc, " {-}")
+  
+  cat("\n\n")
+
+  print(htmltools::tagList(plots[[doc]]))
+
+  cat("\n\n")
+}
+```
+
+
+
+# Guardado de información
+Dada que esta es una réplica individual, nos interesa extraer las métricas más
+importantes en un archivo de Excel, para posteriormente poder realizar comparaciones.
+
+```{r Guardado de Información en Excel}
+
+ag_workbook = openxlsx::createWorkbook()
+### Cantidad de citas semanales realizadas
+
+ag_workbook %>% openxlsx::addWorksheet("M_Tasa_Salida_Acum")
+ag_workbook %>% openxlsx::writeData(sheet = "M_Tasa_Salida_Acum", fig_DT_acum)
+
+## Cantidad de personas en Cola
+
+ag_workbook %>% openxlsx::addWorksheet("M_Colas")
+ag_workbook %>% openxlsx::writeData(sheet = "M_Colas", df_colas)
+
+## Porcentaje de Ausentismos y Abandonos Observados
+
+if(exists("df_aus_aband_porc_gp")){
+  ag_workbook %>% openxlsx::addWorksheet("M_Aus_Aband")
+  ag_workbook %>% openxlsx::writeData(sheet = "M_Aus_Aband", df_aus_aband_porc_gp)
+}
+
+## Cupos Disponibles no Utilizados
+
+ag_workbook %>% openxlsx::addWorksheet("M_CD_No_Util")
+ag_workbook %>% openxlsx::writeData(sheet = "M_CD_No_Util", dfg_cupos_no_utilizados)
+
+
+#Guardamos el archivo en Output
+ag_workbook %>% openxlsx::saveWorkbook(file = here("Output", paste0("M_",nombre_archivo)),
+                                       overwrite = TRUE)
+
+```
+
+```{r}
+print(paste0("Información guardada en la carpeta de Output bajo el nombre: M_",nombre_archivo))
+```
+
+
+
+
+
