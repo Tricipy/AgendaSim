@@ -133,8 +133,13 @@ Con esto, la aplicación debería encontrarse lista para funcionar.
 ## 4. Bibliografía
 
 
-El proyecto de graduación tiene la siguiente referencia:
+Nuestro proyecto de graduación tiene la siguiente referencia:
 
+Álvarez, J. J., Martínez, C. D., & Solís, M. A. (2024). Aplicación de la simulación de eventos discretos para la mejora en la organización de los recursos de atención en la especialidad de prostodoncia del departamento de odontología de un hospital público de Costa Rica. San José, San José, Costa Rica: Universidad de Costa Rica.
 
 Adicionalmente, por ser dos paquetes esenciales en el código utilizado se incluye la referencia a Tidyverse y a R Simmer:
 
+Ucar I, Smeets B, Azcorra A (2019). “simmer: Discrete-Event Simulation for R.” Journal of Statistical Software, 90(2), 1–30. doi:10.18637/jss.v090.i02.
+
+Wickham, H., Çetinkaya-Rundel, M., & Grolemund, G. (2023). R for data science (2nd edition). 
+O’Reilly Media, Inc.
