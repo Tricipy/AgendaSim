@@ -14,3 +14,5 @@ Carlos Daniel Martínez Sánchez
 María Alejandra Solís Rojas
 
 Para optar por el grado de licenciatura en Ingeniería Industrial de la Universidad de Costa Rica.
+
+
