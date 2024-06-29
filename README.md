@@ -6,8 +6,11 @@ organización de los recursos de atención en la especialidad de prostodoncia
 del departamento de odontología de un hospital público de Costa Rica"
 
 Sustentantes:
+
 Juan José Álvarez Pacheco
+
 Carlos Daniel Martínez Sánchez
+
 María Alejandra Solís Rojas
 
 Para optar por el grado de licenciatura en Ingeniería Industrial de la Universidad de Costa Rica.
