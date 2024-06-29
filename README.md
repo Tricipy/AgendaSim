@@ -77,7 +77,12 @@ Luego de asignarse a un doctor en específico, las citas siguen el siguiente pat
 Continuando con el diagrama, observesé que  para tipo de cita y cada tipo de doctor se tiene el mismo proceso de asignación, espera, ausentismo y recepción de la cita.
 ![D_Programación3](https://github.com/Tricipy/AgendaSim/assets/75949039/2d9c83c8-6ab6-4653-adbb-a6022e4a6639)
 
+El resultado final del script de AgSim es un Excel que contiene a la Agenda Global. Esta describe cada movimiento ocurrido en la simulación ya que observando los cupos es posible saber en que momento que paciente recibió qué tipo de cita con cuál doctor. Esta agenda también incluye si el paciente se ausentó, si abandonó el proceso, si fue rechazado en la cita de Cupo Nuevo etc.
+
 ### Generador de Output: Reporte-Metricas-Sim.Rmd
+
+Con el anterior Output es posible construir un Reporte, tipo Dashboard mostrando los resultados de la corrida de simulación
+
 
 ### La interfaz: SimIntXL.xlsm
 
