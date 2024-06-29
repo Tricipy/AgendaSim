@@ -51,12 +51,31 @@ Estos se encuentran en la carpeta de Input y consisten en una serie de 4 Exceles
 - En caso de desearse un cambio de horario en un punto dado de la simulación, los horarios nuevos que se utilizarían para cada doctor. Es decir, a partir de una cierta fecha los horarios de los doctores cambian. Permite agregar o reducir la capacidad del proceso en un momento dado.
 - Si se desea que el proceso inicie con una cantidad de pacientes ya en el sistema para cada tipo de cita entonces el archivo de "MaxFechas" agrega pacientes para llenar las colas hasta una fecha dada. Por ejemplo, si hay 3 meses de cola para la cita de Impresión entonces se analiza cuantos cupos disponibles hay en 3 meses y antes de que inicie la simulación se inyecta esta cantidad de pacientes al sistema.
 
+![Input1](https://github.com/Tricipy/AgendaSim/assets/75949039/d143e991-115a-44c3-af16-bee359bd4c97)
+
 ### Simulación en R: AgSim
 
-La base para esta sección corresponde a la librería de R Simmer (https://r-simmer.org/)
+La base para esta sección corresponde a la librería de R Simmer (https://r-simmer.org/) que junto a Tidyverse (https://www.tidyverse.org/) permiten que el proyecto sea posible.
+
+R Simmer ofrece el framework de simulación de eventos discretos. A través de sus funciones es posible crear un "enviroment" en donde se crean pacientes y son atendidos por recursos (doctores). Los pacientes siguen una trayectoria a través del sistema de citas múltiples, teniendo la posibilidad de ausentarse y abandonar el proceso. La última cita de Control también ofrece la posibilidad de reproceso.
+
+R Simmer se queda ligeramente corto en dos funcionalidades necesarias para este proyecto: 
+- Fue necesario mapear el tiempo de simulación a un horario real ya que R Simmer tan solo ofrece la posibilidad de ver "unidades de tiempo". Fue necesario entender el comportamiento a nivel de días, semanas, horas, minutos para poder replicar los horarios de los doctores.
+- R Simmer no ofrecía una funcionalidad de agendamiento de citas. La librería esta adaptada a procesos en los cuáles apenas un recurso se desocupa, el siguiente elemento en la cola lo toma. Para el sistema de agendamiento se requiere precisamente la posibilidad de agendar citas en un momento específico de un día específico luego de consultar si ese campo se encuentra desocupado. Para ello es la construcción de la **Agenda Global**.
+
+A nivel de código, cada vez que un paciente ingresa al proceso o bien solicita una cita, se debe fijar en la Agenda Global en donde se encuentran todos los cupos. Se busca el cupo disponible más cercano posterior al tiempo mínimo entre citas (una semana) y en caso de encontrarse desocupado se reserva dicho campo. Si otro paciente está buscando una cita con el mismo doctor y mismo tipo de cita entonces verá en la Agenda Global que ese cupo está ocupado y pasará al siguiente más cercano. De esta manera intentar aproximarse al comportamiento del sistema real.
 
 
+**Diagramas de Trayectoria**
 
+Para la cita de Valoración/Cupo Nuevo el proceso es el siguiente. Se asigna siempre el doctor con cupo disponible más cercano:
+![D_Programación](https://github.com/Tricipy/AgendaSim/assets/75949039/6faa8ebe-cbf1-423f-a78d-7755f028ed96)
+
+Luego de asignarse a un doctor en específico, las citas siguen el siguiente patrón:
+![D_Programación2](https://github.com/Tricipy/AgendaSim/assets/75949039/7891a98d-65c5-4371-8bb4-d87f027c688d)
+
+Continuando con el diagrama, observesé que  para tipo de cita y cada tipo de doctor se tiene el mismo proceso de asignación, espera, ausentismo y recepción de la cita.
+![D_Programación3](https://github.com/Tricipy/AgendaSim/assets/75949039/2d9c83c8-6ab6-4653-adbb-a6022e4a6639)
 
 ### Generador de Output: Reporte-Metricas-Sim.Rmd
 
