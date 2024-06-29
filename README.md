@@ -45,7 +45,18 @@ Finalmente se corre la simulación durante un periodo, como por ejemplo durante 
 
 ### Input
 
+Estos se encuentran en la carpeta de Input y consisten en una serie de 4 Exceles en donde está registrado en un formato específico:
+- Los parámetros de entrada del proceso. Aquí se incluyen fechas de inicio y final de la simulación, probabilidades de ausentismo, abandono, reproceso y rechazo. Y adicionalmente opciones de configuración relativas a si se desea que haya un cambio de horarios de doctores en medio de la simulación, y si se desea que el sistema empiece sin pacientes internamente o si se prefiere que empiece con una cantidad de cola equivalente a fechas específicas dadas.
+- Los horarios de los doctores Para cada doctor hay un horario específico semanal. Este es el Input principal utilizado para construir la Agenda Global.
+- En caso de desearse un cambio de horario en un punto dado de la simulación, los horarios nuevos que se utilizarían para cada doctor. Es decir, a partir de una cierta fecha los horarios de los doctores cambian. Permite agregar o reducir la capacidad del proceso en un momento dado.
+- Si se desea que el proceso inicie con una cantidad de pacientes ya en el sistema para cada tipo de cita entonces el archivo de "MaxFechas" agrega pacientes para llenar las colas hasta una fecha dada. Por ejemplo, si hay 3 meses de cola para la cita de Impresión entonces se analiza cuantos cupos disponibles hay en 3 meses y antes de que inicie la simulación se inyecta esta cantidad de pacientes al sistema.
+
 ### Simulación en R: AgSim
+
+La base para esta sección corresponde a la librería de R Simmer (https://r-simmer.org/)
+
+
+
 
 ### Generador de Output: Reporte-Metricas-Sim.Rmd
 
