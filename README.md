@@ -14,8 +14,6 @@ Para optar por el grado de licenciatura en Ingeniería Industrial de la Universi
 
 ## Descripción General
 
-![Image description](/Imagenes/C_Proceso.jpg)
-
 ## Funcionamiento
 
 ### Input
