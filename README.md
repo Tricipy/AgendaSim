@@ -14,7 +14,7 @@ Para optar por el grado de licenciatura en Ingeniería Industrial de la Universi
 
 ## Descripción General
 
-![Caracterización_Proceso](./Imagenes/Para README/C_Proceso.png)
+![Caracterización_Proceso](Imagenes/Para README/Interfaz1.PNG)
 
 
 ## Funcionamiento
