@@ -14,6 +14,7 @@ Sustentantes:
 Para optar por el grado de licenciatura en Ingeniería Industrial de la Universidad de Costa Rica.
 
 Si se desea consultar el trabajo escrito el link se encuentra en la siguiente ubicación:
+
 https://repositorio.sibdi.ucr.ac.cr/items/14da3281-6d48-402f-9655-66e9996cd3fa/full
 
 ## 1. Descripción General
