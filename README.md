@@ -13,6 +13,9 @@ Sustentantes:
 
 Para optar por el grado de licenciatura en Ingeniería Industrial de la Universidad de Costa Rica.
 
+Si se desea consultar el trabajo escrito el link se encuentra en la siguiente ubicación:
+https://repositorio.sibdi.ucr.ac.cr/items/14da3281-6d48-402f-9655-66e9996cd3fa/full
+
 ## 1. Descripción General
 
 El proceso consiste en una serie de 6 citas de secuencia múltiple en donde el paciente es revisado con un doctor durante un espacio de tiempo definido. Al terminar una cita inmediatamente después se le es agendada la fecha de la siguiente cita (el tiempo mínimo es una semana después). La razón es que el laboratorio de prótesis debe producir el insumo que se entregará en la siguiente cita. 
